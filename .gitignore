@@ -1,0 +1,9 @@
+# Node modules
+node_modules/
+
+# Env file with DB credentials
+.env
+
+# Logs
+*.log
+npm-debug.log*
