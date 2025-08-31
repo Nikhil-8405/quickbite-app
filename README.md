@@ -32,7 +32,7 @@ Follow these steps to run the project locally:
 
 1. **Clone the repository**  
    Download the project using:  
-   `git clone https://github.com/<your-username>/quickbite-app.git`
+   `git clone https://github.com/Nikhil-8405/quickbite-app.git`
 
 2. **Navigate into the project folder**  
    Open the folder in your terminal:  
