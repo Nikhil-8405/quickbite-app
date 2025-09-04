@@ -73,21 +73,18 @@
       html += "</table>";
       document.getElementById("menuSection").innerHTML = html;
 
-      // reset cart view
       renderCart();
       document.getElementById("ordersSection").innerHTML = "";
     }
 
     function addToCart(id, name, price) {
       const qty = parseInt(document.getElementById(`qty-${id}`).value);
-
       let existing = cart.find(c => c.menu_item_id === id);
       if (existing) {
         existing.quantity += qty;
       } else {
         cart.push({ menu_item_id: id, name, price, quantity: qty });
       }
-
       renderCart();
     }
 
@@ -117,83 +114,37 @@
       });
 
       html += `</table><p><b>Total:</b> ₹${total}</p>`;
-      html += `<button onclick="placeOrder()">Place Order</button>`;
+      html += `<button onclick="previewBill()">Place Order</button>`;
       document.getElementById("cartSection").innerHTML = html;
     }
 
-    // ✅ Decrease / Increase quantity
     function changeQty(index, delta) {
       cart[index].quantity += delta;
       if (cart[index].quantity <= 0) {
-        cart.splice(index, 1); // remove item if qty <= 0
+        cart.splice(index, 1);
       }
       renderCart();
     }
 
-    // ✅ Remove item from cart
     function removeFromCart(index) {
       cart.splice(index, 1);
       renderCart();
     }
 
-    async function placeOrder() {
+    // Step 1: Show Bill (before saving order)
+    function previewBill() {
       if (cart.length === 0) return alert("Cart is empty");
       if (!currentRestaurantId) return alert("Select a restaurant first!");
 
-      const total = cart.reduce((sum, it) => sum + it.price * it.quantity, 0);
-
-      const res = await fetch("/api/customer/order", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          user_id: userId,
-          restaurant_id: currentRestaurantId,
-          items: cart,
-          total_amount: total
-        })
-      });
-
-      const data = await res.json();
-
-      if (res.ok) {
-        alert("Order placed successfully!");
-        cart = [];
-        renderCart();
-      } else {
-        alert("Error placing order: " + data.message);
-      }
-    }
-
-    async function viewOrders() {
-      const res = await fetch(`/api/customer/orders/${userId}`);
-      const orders = await res.json();
-
-      let html = "<h3>My Orders</h3><table border='1' cellpadding='8'><tr><th>Order ID</th><th>Restaurant</th><th>Amount</th><th>Status</th><th>Time</th><th>Bill</th></tr>";
-      orders.forEach(o => {
-        const orderTime = new Date(o.order_time).toLocaleString(); // ✅ formatted
-        html += `<tr>
-          <td>${o.order_id}</td>
-          <td>${o.restaurant}</td>
-          <td>₹${o.total_amount}</td>
-          <td>${o.status}</td>
-          <td>${orderTime}</td>
-          <td><button onclick="viewBill(${o.order_id}, ${o.total_amount})">View Bill</button></td>
-        </tr>`;
-      });
-      html += "</table>";
-      document.getElementById("ordersSection").innerHTML = html;
-
-      // clear menu + cart
-      document.getElementById("menuSection").innerHTML = "";
-      document.getElementById("cartSection").innerHTML = "";
-    }
-
-    async function viewBill(orderId, total) {
-      const res = await fetch(`/api/customer/bill/${orderId}`);
-      const items = await res.json();
+      const subtotal = cart.reduce((sum, it) => sum + it.price * it.quantity, 0);
+      const platformFee = +(subtotal * 0.05).toFixed(2);
+      const taxableBase = subtotal + platformFee;
+      const cgst = +(taxableBase * 0.09).toFixed(2);
+      const sgst = +(taxableBase * 0.09).toFixed(2);
+      const grandTotal = +(taxableBase + cgst + sgst).toFixed(2);
 
       let itemsHtml = "<table border='1' cellpadding='8'><tr><th>Item</th><th>Qty</th><th>Price</th><th>Total</th></tr>";
-      items.forEach(it => {
+      cart.forEach(it => {
         const lineTotal = it.price * it.quantity;
         itemsHtml += `<tr>
           <td>${it.name}</td>
@@ -204,20 +155,114 @@
       });
       itemsHtml += "</table>";
 
-      const cgst = (total * 0.09).toFixed(2);
-      const sgst = (total * 0.09).toFixed(2);
-      const grandTotal = (total + parseFloat(cgst) + parseFloat(sgst)).toFixed(2);
-
-      let html = `
-        <h3>Bill for Order #${orderId}</h3>
+      const html = `
+        <h3>Confirm Your Order</h3>
         ${itemsHtml}
-        <p><strong>Base Amount:</strong> ₹${total.toFixed(2)}</p>
+        <p><strong>Subtotal:</strong> ₹${subtotal}</p>
+        <p><strong>Platform Fee (5%):</strong> ₹${platformFee}</p>
         <p><strong>CGST (9%):</strong> ₹${cgst}</p>
         <p><strong>SGST (9%):</strong> ₹${sgst}</p>
+        <hr>
         <p><strong>Grand Total:</strong> ₹${grandTotal}</p>
-        <button onclick="viewOrders()">⬅ Back to Orders</button>
+        <button onclick="confirmOrder(${subtotal}, ${platformFee})">💳 Pay & Confirm Order</button>
       `;
 
+      document.getElementById("cartSection").innerHTML = html;
+    }
+
+    // Step 2: Confirm & Save Order in DB
+    async function confirmOrder(subtotal, platformFee) {
+      const total = subtotal;
+      const res = await fetch("/api/customer/order", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          user_id: userId,
+          restaurant_id: currentRestaurantId,
+          items: cart,
+          total_amount: total,
+          platform_fee: platformFee
+        })
+      });
+
+      const data = await res.json();
+      if (res.ok) {
+        alert("✅ Payment successful! Order placed.");
+        cart = [];
+        renderCart();
+      } else {
+        alert("Error placing order: " + data.message);
+      }
+    }
+
+    // My Orders (unchanged)
+    async function viewOrders() {
+      const res = await fetch(`/api/customer/orders/${userId}`);
+      const orders = await res.json();
+
+      let html = "<h3>My Orders</h3><table border='1' cellpadding='8'><tr><th>Order ID</th><th>Restaurant</th><th>Amount</th><th>Status</th><th>Time</th><th>Bill</th></tr>";
+      orders.forEach(o => {
+        const orderTime = new Date(o.order_time).toLocaleString();
+        html += `<tr>
+          <td>${o.order_id}</td>
+          <td>${o.restaurant}</td>
+          <td>₹${o.total_amount}</td>
+          <td>${o.status}</td>
+          <td>${orderTime}</td>
+          <td><button onclick="viewBill(${o.order_id})">View Bill</button></td>
+        </tr>`;
+      });
+      html += "</table>";
+      document.getElementById("ordersSection").innerHTML = html;
+
+      document.getElementById("menuSection").innerHTML = "";
+      document.getElementById("cartSection").innerHTML = "";
+    }
+
+    async function viewBill(orderId) {
+      const headRes = await fetch(`/api/customer/order/${orderId}`);
+      const head = await headRes.json();
+      if (!headRes.ok) return alert('Could not load order');
+
+      const itemsRes = await fetch(`/api/customer/bill/${orderId}`);
+      const items = await itemsRes.json();
+
+      const fmt = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' });
+
+      const subtotal = Number(head.total_amount) || 0;
+      const platformFee = Number(head.platform_fee) || 0;
+
+      const taxableBase = subtotal + platformFee;
+      const cgst = +(taxableBase * 0.09).toFixed(2);
+      const sgst = +(taxableBase * 0.09).toFixed(2);
+      const grandTotal = +(taxableBase + cgst + sgst).toFixed(2);
+
+      let itemsHtml = "<table border='1' cellpadding='8'><tr><th>Item</th><th>Qty</th><th>Price</th><th>Total</th></tr>";
+      items.forEach(it => {
+        const lineTotal = Number(it.price) * Number(it.quantity);
+        itemsHtml += `<tr>
+          <td>${it.name}</td>
+          <td>${it.quantity}</td>
+          <td>${fmt.format(Number(it.price))}</td>
+          <td>${fmt.format(lineTotal)}</td>
+        </tr>`;
+      });
+      itemsHtml += "</table>";
+
+      const when = new Date(head.order_time).toLocaleString();
+
+      const html = `
+        <h3>Bill for Order #${orderId}</h3>
+        <p><b>Restaurant:</b> ${head.restaurant} &nbsp; <b>Placed:</b> ${when}</p>
+        ${itemsHtml}
+        <p><strong>Subtotal:</strong> ${fmt.format(subtotal)}</p>
+        <p><strong>Platform Fee (5%):</strong> ${fmt.format(platformFee)}</p>
+        <p><strong>CGST (9%):</strong> ${fmt.format(cgst)}</p>
+        <p><strong>SGST (9%):</strong> ${fmt.format(sgst)}</p>
+        <hr>
+        <p><strong>Grand Total:</strong> ${fmt.format(grandTotal)}</p>
+        <button onclick="viewOrders()">⬅ Back to Orders</button>
+      `;
       document.getElementById("ordersSection").innerHTML = html;
     }
   </script>

@@ -92,33 +92,37 @@
 
       let totalOrders = 0;
       let totalRevenue = 0;
+      let totalPlatform = 0;
 
-      let html = "<h3>System Report</h3><table border='1' cellpadding='8'><tr><th>Restaurant</th><th>Total Orders</th><th>Total Revenue</th></tr>";
+      let html = "<h3>System Report</h3><table border='1' cellpadding='8'><tr><th>Restaurant</th><th>Total Orders</th><th>Total Revenue</th><th>Platform Fee</th></tr>";
 
       data.forEach(r => {
-        const orders = Number(r.total_orders) || 0;              // ensure number
-        const revenue = parseFloat(r.total_revenue) || 0;        // ensure number
+        const orders = Number(r.total_orders) || 0;
+        const revenue = parseFloat(r.total_revenue) || 0;
+        const fee = parseFloat(r.platform_fee) || 0;
 
         totalOrders += orders;
         totalRevenue += revenue;
+        totalPlatform += fee;
 
         html += `<tr>
           <td>${r.restaurant}</td>
           <td>${orders}</td>
           <td>${fmt.format(revenue)}</td>
+          <td>${fmt.format(fee)}</td>
         </tr>`;
       });
 
-      // ✅ totals row
       html += `<tr style="font-weight:bold;background:#f0f0f0;">
         <td>Total</td>
         <td>${totalOrders}</td>
         <td>${fmt.format(totalRevenue)}</td>
+        <td>${fmt.format(totalPlatform)}</td>
       </tr>`;
 
       html += "</table>";
       document.getElementById("output").innerHTML = html;
-    }
+  }
 
   </script>
 </body>

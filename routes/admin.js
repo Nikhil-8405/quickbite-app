@@ -18,7 +18,7 @@ router.get("/users", (req, res) => {
   });
 });
 
-// ✅ View ALL orders (with items grouped)
+// ✅ View ALL orders (with items grouped, recent first)
 router.get("/orders", (req, res) => {
   const sql = `
     SELECT 
@@ -41,10 +41,12 @@ router.get("/orders", (req, res) => {
   db.query(sql, (err, rows) => {
     if (err) return res.status(500).json({ message: "Error fetching orders" });
 
-    const ordersMap = {};
+    const orders = [];
+    const seen = new Map();
+
     rows.forEach(r => {
-      if (!ordersMap[r.order_id]) {
-        ordersMap[r.order_id] = {
+      if (!seen.has(r.order_id)) {
+        const orderObj = {
           order_id: r.order_id,
           customer: r.customer,
           restaurant: r.restaurant,
@@ -53,13 +55,15 @@ router.get("/orders", (req, res) => {
           order_time: r.order_time,
           items: []
         };
+        orders.push(orderObj);
+        seen.set(r.order_id, orderObj);
       }
       if (r.item_name) {
-        ordersMap[r.order_id].items.push(`${r.item_name} x${r.quantity}`);
+        seen.get(r.order_id).items.push(`${r.item_name} x${r.quantity}`);
       }
     });
 
-    res.json(Object.values(ordersMap));
+    res.json(orders); // ✅ preserves SQL DESC order
   });
 });
 
@@ -76,21 +80,24 @@ router.put("/orders/:orderId/status", (req, res) => {
 });
 
 // ✅ System Report — per restaurant
-router.get("/report", (req, res) => {
+// System report: per-restaurant totals including platform fees
+router.get('/report', (req, res) => {
   const sql = `
     SELECT 
       r.name AS restaurant,
       COUNT(o.order_id) AS total_orders,
-      IFNULL(CAST(SUM(o.total_amount) AS DOUBLE), 0) AS total_revenue
+      IFNULL(SUM(o.total_amount), 0) AS total_revenue,
+      IFNULL(SUM(o.platform_fee), 0) AS platform_fee
     FROM restaurants r
     LEFT JOIN orders o ON r.restaurant_id = o.restaurant_id
     GROUP BY r.restaurant_id, r.name
-    ORDER BY total_revenue DESC
+    ORDER BY r.name ASC
   `;
-  db.query(sql, (err, results) => {
-    if (err) return res.status(500).json({ message: "Error fetching report" });
-    res.json(results);
+  db.query(sql, [], (err, rows) => {
+    if (err) return res.status(500).json({ message: 'DB error' });
+    res.json(rows);
   });
 });
+
 
 module.exports = router;
