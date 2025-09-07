@@ -35,6 +35,7 @@ CREATE TABLE orders (
   restaurant_id INT,
   total_amount DECIMAL(10,2),
   platform_fee DECIMAL(10,2) NOT NULL DEFAULT 0.00, 
+  restaurant_commission DECIMAL(10,2) NOT NULL DEFAULT 0.00,
   status ENUM('Pending','Accepted','Preparing','Delivered') DEFAULT 'Pending',
   order_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (user_id) REFERENCES users(user_id),

@@ -93,23 +93,31 @@
       let totalOrders = 0;
       let totalRevenue = 0;
       let totalPlatform = 0;
+      let totalCommission = 0;
+      let totalAdminEarnings = 0;
 
-      let html = "<h3>System Report</h3><table border='1' cellpadding='8'><tr><th>Restaurant</th><th>Total Orders</th><th>Total Revenue</th><th>Platform Fee</th></tr>";
+      let html = "<h3>System Report</h3><table border='1' cellpadding='8'><tr><th>Restaurant</th><th>Total Orders</th><th>Total Revenue</th><th>Platform Fee</th><th>Restaurant Commission</th><th>Admin Earnings</th></tr>";
 
       data.forEach(r => {
         const orders = Number(r.total_orders) || 0;
         const revenue = parseFloat(r.total_revenue) || 0;
-        const fee = parseFloat(r.platform_fee) || 0;
+        const pf = parseFloat(r.total_platform_fee) || 0;
+        const rc = parseFloat(r.total_restaurant_commission) || 0;
+        const ae = parseFloat(r.admin_earnings) || 0;
 
         totalOrders += orders;
         totalRevenue += revenue;
-        totalPlatform += fee;
+        totalPlatform += pf;
+        totalCommission += rc;
+        totalAdminEarnings += ae;
 
         html += `<tr>
           <td>${r.restaurant}</td>
           <td>${orders}</td>
           <td>${fmt.format(revenue)}</td>
-          <td>${fmt.format(fee)}</td>
+          <td>${fmt.format(pf)}</td>
+          <td>${fmt.format(rc)}</td>
+          <td>${fmt.format(ae)}</td>
         </tr>`;
       });
 
@@ -118,11 +126,13 @@
         <td>${totalOrders}</td>
         <td>${fmt.format(totalRevenue)}</td>
         <td>${fmt.format(totalPlatform)}</td>
+        <td>${fmt.format(totalCommission)}</td>
+        <td>${fmt.format(totalAdminEarnings)}</td>
       </tr>`;
 
       html += "</table>";
       document.getElementById("output").innerHTML = html;
-  }
+    }
 
   </script>
 </body>

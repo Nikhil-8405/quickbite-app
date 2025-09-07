@@ -125,17 +125,25 @@ router.delete("/delete-item/:id", (req, res) => {
   });
 });
 
-// ✅ Report (orders + revenue summary)
+// Generate report: total orders, revenue (subtotal), commission, net earnings
 router.get("/report/:restaurantId", (req, res) => {
   const { restaurantId } = req.params;
-  db.query(
-    "SELECT COUNT(*) AS total_orders, SUM(total_amount) AS total_revenue FROM orders WHERE restaurant_id=?",
-    [restaurantId],
-    (err, result) => {
-      if (err) return res.status(500).json({ message: "Error generating report" });
-      res.json(result[0]);
+  const sql = `
+    SELECT 
+      COUNT(*) AS total_orders,
+      IFNULL(SUM(total_amount), 0) AS total_revenue,
+      IFNULL(SUM(restaurant_commission), 0) AS total_commission,
+      (IFNULL(SUM(total_amount), 0) - IFNULL(SUM(restaurant_commission), 0)) AS net_earnings
+    FROM orders
+    WHERE restaurant_id = ?
+  `;
+  db.query(sql, [restaurantId], (err, result) => {
+    if (err) {
+      console.error("Error generating report:", err);
+      return res.status(500).json({ message: "Error generating report" });
     }
-  );
+    res.json(result[0]);
+  });
 });
 
 module.exports = router;

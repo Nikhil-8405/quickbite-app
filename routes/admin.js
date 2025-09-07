@@ -80,24 +80,25 @@ router.put("/orders/:orderId/status", (req, res) => {
 });
 
 // ✅ System Report — per restaurant
-// System report: per-restaurant totals including platform fees
+// System report: per-restaurant totals including platform fees and restaurant commissions
 router.get('/report', (req, res) => {
   const sql = `
     SELECT 
       r.name AS restaurant,
       COUNT(o.order_id) AS total_orders,
       IFNULL(SUM(o.total_amount), 0) AS total_revenue,
-      IFNULL(SUM(o.platform_fee), 0) AS platform_fee
+      IFNULL(SUM(o.platform_fee), 0) AS total_platform_fee,
+      IFNULL(SUM(o.restaurant_commission), 0) AS total_restaurant_commission,
+      (IFNULL(SUM(o.platform_fee),0) + IFNULL(SUM(o.restaurant_commission),0)) AS admin_earnings
     FROM restaurants r
     LEFT JOIN orders o ON r.restaurant_id = o.restaurant_id
     GROUP BY r.restaurant_id, r.name
-    ORDER BY r.name ASC
+    ORDER BY total_revenue DESC
   `;
-  db.query(sql, [], (err, rows) => {
+  db.query(sql, (err, rows) => {
     if (err) return res.status(500).json({ message: 'DB error' });
     res.json(rows);
   });
 });
-
 
 module.exports = router;

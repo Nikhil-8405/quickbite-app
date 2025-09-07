@@ -1,72 +1,45 @@
 // routes/customer.js
-const express = require('express');
+const express = require("express");
+const db = require("../models/db");
 const router = express.Router();
-const db = require('../models/db');
 
-// helper to round to 2 decimals
-const round2 = (n) => Math.round(n * 100) / 100;
-
-// ---- Get all restaurants
-router.get('/restaurants', (req, res) => {
-  db.query('SELECT restaurant_id, name, address FROM restaurants', (err, rows) => {
-    if (err) return res.status(500).json({ message: 'DB error' });
-    res.json(rows);
-  });
-});
-
-// ---- Get menu for a restaurant
-router.get('/menu/:restaurantId', (req, res) => {
-  const { restaurantId } = req.params;
-  db.query(
-    'SELECT menu_item_id, name, description, price FROM menu_items WHERE restaurant_id = ?',
-    [restaurantId],
-    (err, rows) => {
-      if (err) return res.status(500).json({ message: 'DB error' });
-      res.json(rows);
-    }
-  );
-});
-
-// ---- Place order (server calculates subtotal + 5% platform fee)
-router.post('/order', async (req, res) => {
+// 🛒 Place order (server calculates fees & commission)
+router.post("/order", async (req, res) => {
   try {
     const { user_id, restaurant_id, items } = req.body;
 
     if (!user_id || !restaurant_id || !Array.isArray(items) || items.length === 0) {
-      return res.status(400).json({ message: 'Missing fields' });
+      return res.status(400).json({ message: "Missing fields" });
     }
 
-    // Validate user exists & is a customer
+    // validate user exists & is customer
     const [userRows] = await db.promise().query(
-      'SELECT user_id FROM users WHERE user_id = ? AND role = "customer"',
+      "SELECT user_id FROM users WHERE user_id=? AND role='customer'",
       [user_id]
     );
     if (userRows.length === 0) {
-      return res.status(400).json({ message: 'Invalid customer user_id' });
+      return res.status(400).json({ message: "Invalid customer user_id" });
     }
 
-    // Get menu prices for given items
+    // fetch menu items
     const ids = items.map(i => i.menu_item_id);
+    const placeholders = ids.map(() => "?").join(",");
     const [menuRows] = await db.promise().query(
-      `SELECT menu_item_id, price, restaurant_id FROM menu_items WHERE menu_item_id IN (${ids.map(()=>'?').join(',')})`,
+      `SELECT menu_item_id, price, restaurant_id FROM menu_items WHERE menu_item_id IN (${placeholders})`,
       ids
     );
 
-    // Validate items exist and belong to the same restaurant
     const priceMap = new Map();
-    for (const row of menuRows) {
-      if (row.restaurant_id !== Number(restaurant_id)) {
-        return res.status(400).json({ message: 'One or more items do not belong to this restaurant' });
+    for (const mr of menuRows) {
+      if (mr.restaurant_id !== Number(restaurant_id)) {
+        return res.status(400).json({ message: "Item does not belong to this restaurant" });
       }
-      priceMap.set(row.menu_item_id, Number(row.price));
-    }
-    for (const it of items) {
-      if (!priceMap.has(it.menu_item_id)) {
-        return res.status(400).json({ message: `Invalid menu_item_id: ${it.menu_item_id}` });
-      }
+      priceMap.set(mr.menu_item_id, Number(mr.price));
     }
 
-    // Calculate subtotal from DB prices
+    const round2 = v => Math.round(v * 100) / 100;
+
+    // subtotal
     let subtotal = 0;
     for (const it of items) {
       const qty = Number(it.quantity) || 0;
@@ -75,78 +48,97 @@ router.post('/order', async (req, res) => {
     }
     subtotal = round2(subtotal);
 
-    // 5% platform fee
     const platform_fee = round2(subtotal * 0.05);
+    const restaurant_commission = round2(subtotal * 0.10);
 
-    // Insert order (store subtotal + platform_fee)
+    // insert order
     const [orderResult] = await db.promise().query(
-      'INSERT INTO orders (user_id, restaurant_id, total_amount, platform_fee, status) VALUES (?, ?, ?, ?, "Pending")',
-      [user_id, restaurant_id, subtotal, platform_fee]
+      "INSERT INTO orders (user_id, restaurant_id, total_amount, platform_fee, restaurant_commission, status) VALUES (?, ?, ?, ?, ?, 'Pending')",
+      [user_id, restaurant_id, subtotal, platform_fee, restaurant_commission]
     );
     const orderId = orderResult.insertId;
 
-    // Insert order items
+    // insert items
     const values = items.map(it => [orderId, it.menu_item_id, Number(it.quantity) || 0]);
     await db.promise().query(
-      'INSERT INTO order_items (order_id, menu_item_id, quantity) VALUES ?',
+      "INSERT INTO order_items (order_id, menu_item_id, quantity) VALUES ?",
       [values]
     );
 
-    res.json({
-      message: 'Order placed',
-      order_id: orderId,
-      subtotal,
-      platform_fee
-    });
+    res.json({ message: "Order placed", order_id: orderId, subtotal, platform_fee, restaurant_commission });
   } catch (err) {
-    console.error('Place order error:', err);
-    res.status(500).json({ message: 'Server error' });
+    console.error("Place order error:", err);
+    res.status(500).json({ message: "Server error" });
   }
 });
 
-// ---- Get a customer’s orders (header rows)
-router.get('/orders/:userId', (req, res) => {
-  const { userId } = req.params;
-  const sql = `
-    SELECT o.order_id, r.name AS restaurant, o.total_amount, o.platform_fee, o.status, o.order_time
-    FROM orders o
-    JOIN restaurants r ON o.restaurant_id = r.restaurant_id
-    WHERE o.user_id = ?
-    ORDER BY o.order_time DESC
-  `;
-  db.query(sql, [userId], (err, rows) => {
-    if (err) return res.status(500).json({ message: 'DB error' });
-    res.json(rows);
-  });
-});
-
-// ---- Get bill line items for an order
-router.get('/bill/:orderId', (req, res) => {
+// 🔍 Order header (for bill)
+router.get("/order/:orderId", (req, res) => {
   const { orderId } = req.params;
   const sql = `
-    SELECT mi.name, mi.price, oi.quantity
-    FROM order_items oi
-    JOIN menu_items mi ON oi.menu_item_id = mi.menu_item_id
-    WHERE oi.order_id = ?
-  `;
-  db.query(sql, [orderId], (err, rows) => {
-    if (err) return res.status(500).json({ message: 'DB error' });
-    res.json(rows);
-  });
-});
-
-// ---- NEW: Get order header (subtotal + platform fee) for bill
-router.get('/order/:orderId', (req, res) => {
-  const { orderId } = req.params;
-  const sql = `
-    SELECT o.order_id, o.total_amount, o.platform_fee, o.status, o.order_time, r.name AS restaurant
+    SELECT o.order_id, o.total_amount, o.platform_fee, o.restaurant_commission, o.status, o.order_time, r.name AS restaurant
     FROM orders o
     JOIN restaurants r ON o.restaurant_id = r.restaurant_id
     WHERE o.order_id = ?
   `;
   db.query(sql, [orderId], (err, rows) => {
-    if (err) return res.status(500).json({ message: 'DB error' });
-    if (rows.length === 0) return res.status(404).json({ message: 'Order not found' });
+    if (err) return res.status(500).json({ message: "DB error" });
+    if (rows.length === 0) return res.status(404).json({ message: "Order not found" });
+    res.json(rows[0]);
+  });
+});
+
+// 🔍 Order items (bill details)
+router.get("/bill/:orderId", (req, res) => {
+  const { orderId } = req.params;
+  const sql = `
+    SELECT m.name, m.price, oi.quantity
+    FROM order_items oi
+    JOIN menu_items m ON oi.menu_item_id = m.menu_item_id
+    WHERE oi.order_id = ?
+  `;
+  db.query(sql, [orderId], (err, rows) => {
+    if (err) return res.status(500).json({ message: "DB error" });
+    res.json(rows);
+  });
+});
+
+// ✅ Fetch restaurants list
+router.get("/restaurants", (req, res) => {
+  db.query("SELECT * FROM restaurants", (err, rows) => {
+    if (err) return res.status(500).json({ message: "Error fetching restaurants" });
+    res.json(rows);
+  });
+});
+
+// ✅ Fetch menu of a restaurant
+router.get("/menu/:restaurantId", (req, res) => {
+  db.query("SELECT * FROM menu_items WHERE restaurant_id=?", [req.params.restaurantId], (err, rows) => {
+    if (err) return res.status(500).json({ message: "Error fetching menu" });
+    res.json(rows);
+  });
+});
+
+// ✅ Fetch customer orders
+router.get("/orders/:userId", (req, res) => {
+  const sql = `
+    SELECT o.order_id, o.total_amount, o.status, o.order_time, r.name AS restaurant
+    FROM orders o
+    JOIN restaurants r ON o.restaurant_id = r.restaurant_id
+    WHERE o.user_id = ?
+    ORDER BY o.order_time DESC
+  `;
+  db.query(sql, [req.params.userId], (err, rows) => {
+    if (err) return res.status(500).json({ message: "Error fetching orders" });
+    res.json(rows);
+  });
+});
+
+// ✅ Fetch customer details
+router.get("/details/:userId", (req, res) => {
+  db.query("SELECT name FROM users WHERE user_id=?", [req.params.userId], (err, rows) => {
+    if (err) return res.status(500).json({ message: "Error fetching user" });
+    if (rows.length === 0) return res.status(404).json({ message: "Not found" });
     res.json(rows[0]);
   });
 });

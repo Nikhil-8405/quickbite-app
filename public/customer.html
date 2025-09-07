@@ -164,24 +164,26 @@
         <p><strong>SGST (9%):</strong> ₹${sgst}</p>
         <hr>
         <p><strong>Grand Total:</strong> ₹${grandTotal}</p>
-        <button onclick="confirmOrder(${subtotal}, ${platformFee})">💳 Pay & Confirm Order</button>
+        <button onclick="confirmOrder()">💳 Pay & Confirm Order</button>
       `;
 
       document.getElementById("cartSection").innerHTML = html;
     }
 
-    // Step 2: Confirm & Save Order in DB
-    async function confirmOrder(subtotal, platformFee) {
-      const total = subtotal;
+    // Step 2: Confirm & Save Order in DB (client sends user_id, restaurant_id, items)
+    async function confirmOrder() {
+      // cart and currentRestaurantId are in scope
+      if (cart.length === 0) return alert("Cart is empty");
+      if (!currentRestaurantId) return alert("Select a restaurant first!");
+
+      // Send items only; server computes subtotal, platform_fee, restaurant_commission
       const res = await fetch("/api/customer/order", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           user_id: userId,
           restaurant_id: currentRestaurantId,
-          items: cart,
-          total_amount: total,
-          platform_fee: platformFee
+          items: cart
         })
       });
 
@@ -190,6 +192,8 @@
         alert("✅ Payment successful! Order placed.");
         cart = [];
         renderCart();
+        // optionally show order id / navigate to orders view
+        viewOrders();
       } else {
         alert("Error placing order: " + data.message);
       }
