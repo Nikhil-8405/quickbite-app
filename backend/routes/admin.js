@@ -63,7 +63,7 @@ router.get("/orders", (req, res) => {
       }
     });
 
-    res.json(orders); // ✅ preserves SQL DESC order
+    res.json(orders);
   });
 });
 

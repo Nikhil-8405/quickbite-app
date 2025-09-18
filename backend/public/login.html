@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Login - QuickBite</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="min-h-screen flex items-center justify-center bg-gradient-to-br from-orange-100 via-white to-green-100">
+  <div class="w-full max-w-md bg-white rounded-2xl shadow-xl p-8">
+    <!-- Logo / Title -->
+    <h2 class="text-3xl font-bold text-center text-orange-600 mb-6">QuickBite Login</h2>
+
+    <!-- Login Form -->
+    <form onsubmit="login(event)" class="space-y-4">
+      <input 
+        type="email" 
+        id="email" 
+        placeholder="Email" 
+        required
+        class="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-orange-400 focus:outline-none"
+      >
+      <input 
+        type="password" 
+        id="password" 
+        placeholder="Password" 
+        required
+        class="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-orange-400 focus:outline-none"
+      >
+      <select 
+        id="role" 
+        required
+        class="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-orange-400 focus:outline-none bg-white"
+      >
+        <option value="">-- Select Role --</option>
+        <option value="customer">Customer</option>
+        <option value="restaurant">Restaurant</option>
+        <option value="admin">Admin</option>
+      </select>
+      
+      <button 
+        type="submit" 
+        class="w-full bg-orange-500 hover:bg-orange-600 text-white font-semibold py-3 rounded-lg shadow-md transition duration-200"
+      >
+        Login
+      </button>
+    </form>
+
+    <!-- Footer -->
+    <p class="text-center text-sm text-gray-600 mt-6">
+      Don’t have an account? 
+      <a href="register.html" class="text-orange-500 font-semibold hover:underline">Register here</a>
+    </p>
+  </div>
+
+  <script>
+    async function login(event) {
+      event.preventDefault();
+
+      const email = document.getElementById("email").value;
+      const password = document.getElementById("password").value;
+      const role = document.getElementById("role").value;
+
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password, role })
+      });
+
+      const data = await res.json();
+
+      if (res.ok) {
+        localStorage.setItem("user_id", data.user_id);
+        localStorage.setItem("role", data.role);
+        if (data.restaurant_id) {
+          localStorage.setItem("restaurant_id", data.restaurant_id);
+        }
+
+        if (data.role === "customer") {
+          window.location.href = "customer.html";
+        } else if (data.role === "restaurant") {
+          window.location.href = "restaurant.html";
+        } else if (data.role === "admin") {
+          window.location.href = "admin.html";
+        }
+      } else {
+        alert(data.message);
+      }
+    }
+  </script>
+</body>
+</html>

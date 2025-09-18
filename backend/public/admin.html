@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Admin Dashboard - QuickBite</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body class="bg-gray-100 text-gray-800 min-h-screen">
+  <!-- Navbar -->
+  <header class="bg-gray-900 text-white shadow-md">
+    <div class="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center">
+      <h1 class="text-2xl font-bold">👑 Admin Dashboard</h1>
+      <nav class="space-x-3">
+        <button onclick="loadRestaurants()" class="bg-white text-gray-900 px-4 py-2 rounded-lg shadow hover:bg-gray-100">🏢 Restaurants</button>
+        <button onclick="loadUsers()" class="bg-white text-gray-900 px-4 py-2 rounded-lg shadow hover:bg-gray-100">👥 Users</button>
+        <button onclick="loadOrders()" class="bg-white text-gray-900 px-4 py-2 rounded-lg shadow hover:bg-gray-100">📦 Orders</button>
+        <button onclick="loadReport()" class="bg-white text-gray-900 px-4 py-2 rounded-lg shadow hover:bg-gray-100">📊 Report</button>
+        <button onclick="logout()" class="bg-white text-gray-900 px-4 py-2 rounded-lg shadow hover:bg-gray-100">🚪 Logout</button>
+      </nav>
+    </div>
+  </header>
+
+  <!-- Main -->
+  <main class="max-w-7xl mx-auto p-6">
+    <div id="output" class="bg-white p-6 rounded-2xl shadow-md min-h-[400px]"></div>
+  </main>
+
+  <script>
+    let chartInstance = null;
+
+    function clearOutput() {
+      if (chartInstance) {
+        chartInstance.destroy();
+        chartInstance = null;
+      }
+      document.getElementById("output").innerHTML = '';
+    }
+
+    function logout() {
+      localStorage.removeItem("token");
+      sessionStorage.clear();
+      window.location.href = "login.html";
+    }
+
+    async function loadRestaurants() {
+      clearOutput();
+      const res = await fetch('/api/admin/restaurants');
+      const data = await res.json();
+
+      let html = `<h2 class="text-xl font-semibold mb-6">Restaurants</h2>`;
+      html += `<div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">`;
+      data.forEach(r => {
+        html += `
+          <div class="border rounded-lg p-4 shadow hover:shadow-lg transition">
+            <h3 class="font-bold text-lg mb-2">${r.name}</h3>
+            <p class="text-gray-700"><strong>ID:</strong> ${r.restaurant_id}</p>
+            <p class="text-gray-600">${r.address}</p>
+          </div>`;
+      });
+      html += `</div>`;
+
+      document.getElementById("output").innerHTML = html;
+    }
+
+    async function loadUsers() {
+      clearOutput();
+      const res = await fetch('/api/admin/users');
+      const data = await res.json();
+
+      let html = `<h2 class="text-xl font-semibold mb-6">Users</h2>`;
+
+      html += `<div>`; 
+
+      html += `<ul class="space-y-4">`;
+      data.forEach(u => {
+        html += `
+          <li class="border rounded-lg p-4 shadow hover:shadow-lg transition flex flex-col sm:flex-row sm:justify-between">
+            <div>
+              <p><strong>ID:</strong> ${u.user_id}</p>
+              <p><strong>Name:</strong> ${u.name}</p>
+              <p><strong>Email:</strong> ${u.email}</p>
+            </div>
+            <div class="mt-2 sm:mt-0 text-right">
+              <p><strong>Role:</strong> ${u.role}</p>
+            </div>
+          </li>`;
+      });
+      html += `</ul></div>`;
+
+      document.getElementById("output").innerHTML = html;
+    }
+
+    async function loadOrders() {
+      clearOutput();
+      const res = await fetch('/api/admin/orders');
+      const orders = await res.json();
+
+      // Show orders as cards + chart for status distribution
+      let html = `<h2 class="text-xl font-semibold mb-6">All Orders</h2>`;
+
+      // Build order status counts for chart
+      const statusCounts = {};
+      orders.forEach(o => {
+        statusCounts[o.status] = (statusCounts[o.status] || 0) + 1;
+      });
+
+      // Chart canvas
+      html += `<div class="mb-6 max-w-md">
+        <canvas id="orderStatusChart"></canvas>
+      </div>`;
+
+      // Orders cards grid
+      html += `<div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6 overflow-auto max-h-[400px]">`;
+      orders.forEach(order => {
+        const items = order.items.length > 0 ? order.items.join(", ") : "No items";
+        const orderTime = new Date(order.order_time).toLocaleString();
+
+        html += `
+          <div class="border rounded-lg p-4 shadow hover:shadow-lg transition">
+            <p><strong>Order ID:</strong> ${order.order_id}</p>
+            <p><strong>Customer:</strong> ${order.customer}</p>
+            <p><strong>Restaurant:</strong> ${order.restaurant}</p>
+            <p><strong>Items:</strong> ${items}</p>
+            <p><strong>Total:</strong> ₹${order.total_amount}</p>
+            <p><strong>Status:</strong> <span class="font-semibold">${order.status}</span></p>
+            <p><strong>Time:</strong> ${orderTime}</p>
+            <label class="block mt-2">
+              <select onchange="updateStatus(${order.order_id}, this.value)" class="border rounded px-2 py-1 w-full">
+                <option value="">--Change Status--</option>
+                <option value="Accepted">Accepted</option>
+                <option value="Preparing">Preparing</option>
+                <option value="Delivered">Delivered</option>
+              </select>
+            </label>
+          </div>`;
+      });
+      html += `</div>`;
+
+      document.getElementById("output").innerHTML = html;
+
+      // Render chart
+      const ctx = document.getElementById('orderStatusChart').getContext('2d');
+      chartInstance = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+          labels: Object.keys(statusCounts),
+          datasets: [{
+            label: 'Order Status',
+            data: Object.values(statusCounts),
+            backgroundColor: ['#3b82f6', '#facc15', '#10b981', '#ef4444'],
+            hoverOffset: 30
+          }]
+        },
+        options: {
+          responsive: true,
+          plugins: {
+            legend: {
+              position: 'bottom'
+            },
+            title: {
+              display: true,
+              text: 'Order Status Distribution'
+            }
+          }
+        }
+      });
+    }
+
+    async function updateStatus(orderId, newStatus) {
+      if (!newStatus) return;
+      const res = await fetch(`/api/admin/orders/${orderId}/status`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: newStatus })
+      });
+      if (res.ok) {
+        alert("Status updated!");
+        loadOrders();
+      } else {
+        alert("Failed to update status");
+      }
+    }
+
+    async function loadReport() {
+      clearOutput();
+      const res = await fetch('/api/admin/report');
+      const data = await res.json();
+
+      const fmt = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' });
+
+      // Aggregate totals for chart and display
+      let totalOrders = 0;
+      let totalRevenue = 0;
+      let totalPlatform = 0;
+      let totalCommission = 0;
+      let totalAdminEarnings = 0;
+
+      // Prepare data for charts
+      const restaurants = [];
+      const revenues = [];
+      const commissions = [];
+      const platformFees = [];
+      const adminEarnings = [];
+      const totalOrdersArr = [];
+
+      data.forEach(r => {
+        const orders = Number(r.total_orders) || 0;
+        const revenue = parseFloat(r.total_revenue) || 0;
+        const pf = parseFloat(r.total_platform_fee) || 0;
+        const rc = parseFloat(r.total_restaurant_commission) || 0;
+        const ae = parseFloat(r.admin_earnings) || 0;
+
+        totalOrders += orders;
+        totalRevenue += revenue;
+        totalPlatform += pf;
+        totalCommission += rc;
+        totalAdminEarnings += ae;
+
+        restaurants.push(r.restaurant);
+        totalOrdersArr.push(orders);
+        revenues.push(revenue);
+        platformFees.push(pf);
+        commissions.push(rc);
+        adminEarnings.push(ae);
+      });
+
+      let html = `<h2 class="text-xl font-semibold mb-6">System Report</h2>`;
+
+      // Summary cards
+      html += `
+        <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4 mb-6">
+          <div class="bg-blue-100 p-4 rounded-lg shadow text-center">
+            <p class="text-sm font-semibold">Total Orders</p>
+            <p class="text-2xl font-bold">${totalOrders}</p>
+          </div>
+          <div class="bg-green-100 p-4 rounded-lg shadow text-center">
+            <p class="text-sm font-semibold">Total Revenue</p>
+            <p class="text-2xl font-bold">${fmt.format(totalRevenue)}</p>
+          </div>
+          <div class="bg-yellow-100 p-4 rounded-lg shadow text-center">
+            <p class="text-sm font-semibold">Platform Fee</p>
+            <p class="text-2xl font-bold">${fmt.format(totalPlatform)}</p>
+          </div>
+          <div class="bg-purple-100 p-4 rounded-lg shadow text-center">
+            <p class="text-sm font-semibold">Commission</p>
+            <p class="text-2xl font-bold">${fmt.format(totalCommission)}</p>
+          </div>
+          <div class="bg-pink-100 p-4 rounded-lg shadow text-center">
+            <p class="text-sm font-semibold">Admin Earnings</p>
+            <p class="text-2xl font-bold">${fmt.format(totalAdminEarnings)}</p>
+          </div>
+        </div>
+      `;
+
+      // Chart containers
+      html += `
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div>
+            <canvas id="ordersChart"></canvas>
+          </div>
+          <div>
+            <canvas id="revenueChart"></canvas>
+          </div>
+        </div>
+      `;
+
+      document.getElementById("output").innerHTML = html;
+
+      // Orders bar chart
+      const ordersCtx = document.getElementById('ordersChart').getContext('2d');
+      chartInstance = new Chart(ordersCtx, {
+        type: 'bar',
+        data: {
+          labels: restaurants,
+          datasets: [{
+            label: 'Total Orders',
+            data: totalOrdersArr,
+            backgroundColor: '#3b82f6'
+          }]
+        },
+        options: {
+          responsive: true,
+          plugins: {
+            legend: { display: false },
+            title: {
+              display: true,
+              text: 'Total Orders per Restaurant'
+            }
+          },
+          scales: {
+            y: {
+              beginAtZero: true,
+              precision: 0
+            }
+          }
+        }
+      });
+
+      // Revenue stacked bar chart
+      const revenueCtx = document.getElementById('revenueChart').getContext('2d');
+      new Chart(revenueCtx, {
+        type: 'bar',
+        data: {
+          labels: restaurants,
+          datasets: [
+            {
+              label: 'Revenue',
+              data: revenues,
+              backgroundColor: '#10b981',
+            },
+            {
+              label: 'Platform Fee',
+              data: platformFees,
+              backgroundColor: '#f59e0b',
+            },
+            {
+              label: 'Commission',
+              data: commissions,
+              backgroundColor: '#8b5cf6',
+            },
+            {
+              label: 'Admin Earnings',
+              data: adminEarnings,
+              backgroundColor: '#ec4899',
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          plugins: {
+            title: {
+              display: true,
+              text: 'Financials per Restaurant (₹)'
+            }
+          },
+          scales: {
+            y: {
+              beginAtZero: true,
+              stacked: true,
+              ticks: {
+                callback: function(value) {
+                  return '₹' + value;
+                }
+              }
+            },
+            x: {
+              stacked: true
+            }
+          }
+        }
+      });
+    }
+    loadReport();
+  </script>
+</body>
+</html>

@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Restaurant Dashboard - QuickBite</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 text-gray-800 min-h-screen">
+  <!-- Navbar -->
+  <header class="bg-orange-600 text-white shadow-md">
+    <div class="max-w-6xl mx-auto px-6 py-4 flex justify-between items-center">
+      <h1 id="welcome" class="text-2xl font-bold">Welcome, Restaurant!</h1>
+      <nav class="space-x-3">
+        <button onclick="loadOrders()" class="bg-white text-orange-600 px-4 py-2 rounded-lg shadow hover:bg-gray-100">📦 Orders</button>
+        <button onclick="loadReport()" class="bg-white text-orange-600 px-4 py-2 rounded-lg shadow hover:bg-gray-100">📊 Report</button>
+        <button onclick="loadMenu()" class="bg-white text-orange-600 px-4 py-2 rounded-lg shadow hover:bg-gray-100">🍴 Menu</button>
+        <button onclick="logout()" class="bg-white text-orange-600 px-4 py-2 rounded-lg shadow hover:bg-gray-100">🚪 Logout</button>
+      </nav>
+    </div>
+  </header>
+
+  <!-- Main content -->
+  <main class="max-w-6xl mx-auto p-6">
+    <div id="output" class="bg-white p-6 rounded-2xl shadow-md"></div>
+  </main>
+
+  <script>
+    const restaurantId = localStorage.getItem("restaurant_id");
+    if (!restaurantId) {
+      alert("No restaurant linked to this account.");
+      window.location.href = "login.html";
+    }
+
+    // ✅ Fetch restaurant name
+    window.onload = async function() {
+      const res = await fetch(`/api/restaurant/details/${restaurantId}`);
+      if (res.ok) {
+        const data = await res.json();
+        document.getElementById("welcome").innerText = `Welcome, ${data.name}!`;
+      }
+    };
+
+    // ✅ Orders
+    async function loadOrders() {
+      const res = await fetch(`/api/restaurant/orders/${restaurantId}`);
+      const orders = await res.json();
+
+      let html = `
+        <h2 class="text-xl font-semibold mb-4">Orders</h2>
+        <div class="overflow-x-auto">
+        <table class="min-w-full border border-gray-200 rounded-lg overflow-hidden">
+          <thead class="bg-orange-600 text-white">
+            <tr>
+              <th class="px-4 py-2">ID</th>
+              <th class="px-4 py-2">Customer</th>
+              <th class="px-4 py-2">Items</th>
+              <th class="px-4 py-2">Total</th>
+              <th class="px-4 py-2">Status</th>
+              <th class="px-4 py-2">Time</th>
+              <th class="px-4 py-2">Update</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-200">`;
+
+      orders.forEach(order => {
+        const items = order.items.length > 0 ? order.items.join(", ") : "No items";
+        const orderTime = new Date(order.order_time).toLocaleString();
+
+        html += `
+          <tr class="hover:bg-gray-50">
+            <td class="px-4 py-2">${order.order_id}</td>
+            <td class="px-4 py-2">${order.customer}</td>
+            <td class="px-4 py-2">${items}</td>
+            <td class="px-4 py-2">₹${order.total_amount}</td>
+            <td class="px-4 py-2">${order.status}</td>
+            <td class="px-4 py-2">${orderTime}</td>
+            <td class="px-4 py-2">
+              <select onchange="updateStatus(${order.order_id}, this.value)" class="border rounded px-2 py-1">
+                <option value="">--Change--</option>
+                <option value="Accepted">Accepted</option>
+                <option value="Preparing">Preparing</option>
+                <option value="Delivered">Delivered</option>
+              </select>
+            </td>
+          </tr>`;
+      });
+
+      html += "</tbody></table></div>";
+      document.getElementById("output").innerHTML = html;
+    }
+
+    async function updateStatus(orderId, newStatus) {
+      if (!newStatus) return;
+      const res = await fetch(`/api/restaurant/update-status/${orderId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: newStatus })
+      });
+      if (res.ok) {
+        alert("Status updated!");
+        loadOrders();
+      } else {
+        alert("Failed to update");
+      }
+    }
+
+    // ✅ Report
+    async function loadReport() {
+      const res = await fetch(`/api/restaurant/report/${restaurantId}`);
+      const r = await res.json();
+      const fmt = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' });
+
+      const html = `
+        <h2 class="text-xl font-semibold mb-4">Report</h2>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div class="p-4 bg-gray-50 rounded-lg shadow">
+            <p class="text-gray-500">Total Orders</p>
+            <p class="text-2xl font-bold">${r.total_orders || 0}</p>
+          </div>
+          <div class="p-4 bg-gray-50 rounded-lg shadow">
+            <p class="text-gray-500">Total Revenue</p>
+            <p class="text-2xl font-bold">${fmt.format(r.total_revenue || 0)}</p>
+          </div>
+          <div class="p-4 bg-gray-50 rounded-lg shadow">
+            <p class="text-gray-500">Commission</p>
+            <p class="text-2xl font-bold">${fmt.format(r.total_commission || 0)}</p>
+          </div>
+          <div class="p-4 bg-gray-50 rounded-lg shadow">
+            <p class="text-gray-500">Net Earnings</p>
+            <p class="text-2xl font-bold text-green-600">${fmt.format(r.net_earnings || 0)}</p>
+          </div>
+        </div>
+      `;
+      document.getElementById("output").innerHTML = html;
+    }
+
+    // ✅ Menu
+    async function loadMenu() {
+      const res = await fetch(`/api/restaurant/menu/${restaurantId}`);
+      const items = await res.json();
+
+      let html = `
+        <h2 class="text-xl font-semibold mb-4">Menu</h2>
+        <div class="overflow-x-auto">
+        <table class="min-w-full border border-gray-200 rounded-lg overflow-hidden mb-6">
+          <thead class="bg-orange-600 text-white">
+            <tr>
+              <th class="px-4 py-2">Name</th>
+              <th class="px-4 py-2">Description</th>
+              <th class="px-4 py-2">Price</th>
+              <th class="px-4 py-2">Action</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-200">`;
+
+      items.forEach(it => {
+        html += `
+          <tr class="hover:bg-gray-50">
+            <td class="px-4 py-2">${it.name}</td>
+            <td class="px-4 py-2">${it.description || ''}</td>
+            <td class="px-4 py-2">₹${it.price}</td>
+            <td class="px-4 py-2">
+              <button onclick="deleteItem(${it.menu_item_id})" class="text-red-500 hover:underline">❌ Delete</button>
+            </td>
+          </tr>`;
+      });
+
+      html += "</tbody></table></div>";
+
+      html += `
+        <h3 class="text-lg font-semibold mb-2">Add New Item</h3>
+        <div class="flex flex-col sm:flex-row gap-3">
+          <input id="newName" placeholder="Name" class="border rounded px-3 py-2 flex-1">
+          <input id="newDesc" placeholder="Description" class="border rounded px-3 py-2 flex-1">
+          <input id="newPrice" type="number" placeholder="Price" class="border rounded px-3 py-2 w-32">
+          <button onclick="addItem()" class="bg-green-600 text-white px-4 py-2 rounded-lg shadow hover:bg-green-700">Add</button>
+        </div>
+      `;
+
+      document.getElementById("output").innerHTML = html;
+    }
+
+    async function addItem() {
+      const name = document.getElementById("newName").value.trim();
+      const description = document.getElementById("newDesc").value.trim();
+      const price = parseFloat(document.getElementById("newPrice").value);
+
+      if (!name || isNaN(price)) {
+        return alert("Provide valid name and price");
+      }
+
+      const res = await fetch("/api/restaurant/add-item", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ restaurant_id: restaurantId, name, description, price })
+      });
+
+      if (res.ok) {
+        alert("Item added");
+        loadMenu();
+      } else {
+        alert("Failed to add item");
+      }
+    }
+
+    async function deleteItem(id) {
+      const res = await fetch(`/api/restaurant/delete-item/${id}`, { method: "DELETE" });
+      if (res.ok) {
+        alert("Item deleted");
+        loadMenu();
+      } else {
+        alert("Failed to delete item");
+      }
+    }
+    function logout() {
+      localStorage.removeItem("token");
+      sessionStorage.clear();
+      window.location.href = "login.html";
+    }
+    loadOrders();
+  </script>
+</body>
+</html>
